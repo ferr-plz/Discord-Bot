@@ -43,10 +43,11 @@ async def on_message(message):
 
     try:
         async with message.channel.typing():
-            # Usamos gemini-1.5-flash que tiene disponibilidad garantizada
             model = genai.GenerativeModel('gemini-1.5-flash')
             response = model.generate_content(
-                f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. Responde de forma muy breve y concisa en un solo párrafo corto para el chat del juego. Mensaje: {prompt}"
+                f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
+                f"Responde de forma muy breve y concisa en un solo párrafo corto para el chat del juego. "
+                f"Mensaje: {prompt}"
             )
             
             if response and hasattr(response, 'text') and response.text:
