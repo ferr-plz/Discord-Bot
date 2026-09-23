@@ -4,7 +4,6 @@ from flask import Flask
 import discord
 import google.generativeai as genai
 
-# Servidor Flask para mantener activo Render
 app = Flask(__name__)
 
 @app.route('/')
@@ -17,7 +16,6 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# Variables de entorno
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 CHANNEL_ID = 1150505286109495449
@@ -43,17 +41,24 @@ async def on_message(message):
 
     try:
         async with message.channel.typing():
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(
-                f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
-                f"Responde de forma muy breve y concisa en un solo párrafo corto para el chat del juego. "
-                f"Mensaje: {prompt}"
-            )
+            # Probamos con el alias estable directo
+            try:
+                model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                response = model.generate_content(
+                    f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
+                    f"Responde de forma muy breve para el chat del juego. Mensaje: {prompt}"
+                )
+            except Exception:
+                # Fallback secundario si el alias anterior falla
+                model = genai.GenerativeModel('gemini-pro')
+                response = model.generate_content(
+                    f"Eres un asistente en Minecraft. Responde corto: {prompt}"
+                )
             
             if response and hasattr(response, 'text') and response.text:
                 await message.channel.send(response.text)
             else:
-                await message.channel.send("No se pudo generar texto.")
+                await message.channel.send("No se pudo generar respuesta.")
     except Exception as e:
         print(f"Error con Gemini: {e}")
         await message.channel.send(f"Error con la API: {e}")
