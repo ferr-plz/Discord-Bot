@@ -26,7 +26,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
-# Prefijo que debe llevar el mensaje para que el bot responda
 PREFIX = "!bot"
 
 @client.event
@@ -35,19 +34,22 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    # Ignorar mensajes fuera del canal o enviados por el propio bot
     if message.channel.id != CHANNEL_ID or message.author.id == client.user.id:
         return
 
-    # Verificar si el mensaje empieza con el prefijo '!bot'
-    if not message.content.lower().startswith(PREFIX):
-        return  # Si es una conversación normal, no hace nada
+    content = message.content
+    content_lower = content.lower()
 
-    # Extraer la pregunta quitando la palabra '!bot' del inicio
-    prompt = message.content[len(PREFIX):].strip()
-    
+    # Verifica si '!bot' está en cualquier parte del mensaje
+    if PREFIX not in content_lower:
+        return  # Si es charla normal de Minecraft, lo ignora
+
+    # Extrae el texto justo después de '!bot'
+    split_index = content_lower.find(PREFIX) + len(PREFIX)
+    prompt = content[split_index:].strip()
+
     if not prompt:
-        await message.channel.send("¿Dime? Escribe un mensaje después de `!bot` para responderte.")
+        await message.channel.send("¿Dime? Escribe tu consulta después de `!bot`.")
         return
 
     try:
@@ -55,7 +57,7 @@ async def on_message(message):
             model = genai.GenerativeModel('gemini-3.6-flash')
             response = model.generate_content(
                 f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
-                f"Responde de forma muy breve y concisa para el chat del juego. "
+                f"Responde de forma muy breve y concisa en un solo párrafo para el chat del juego. "
                 f"Mensaje: {prompt}"
             )
             
