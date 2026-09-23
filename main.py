@@ -4,7 +4,6 @@ from flask import Flask
 import discord
 import google.generativeai as genai
 
-# Servidor Flask para mantener activo Render
 app = Flask(__name__)
 
 @app.route('/')
@@ -17,7 +16,6 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# Variables de entorno
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 CHANNEL_ID = 1150505286109495449
@@ -28,26 +26,36 @@ intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
+# Prefijo que debe llevar el mensaje para que el bot responda
+PREFIX = "!bot"
+
 @client.event
 async def on_ready():
     print(f'Bot iniciado correctamente como {client.user}')
 
 @client.event
 async def on_message(message):
+    # Ignorar mensajes fuera del canal o enviados por el propio bot
     if message.channel.id != CHANNEL_ID or message.author.id == client.user.id:
         return
 
-    prompt = message.content.strip()
+    # Verificar si el mensaje empieza con el prefijo '!bot'
+    if not message.content.lower().startswith(PREFIX):
+        return  # Si es una conversación normal, no hace nada
+
+    # Extraer la pregunta quitando la palabra '!bot' del inicio
+    prompt = message.content[len(PREFIX):].strip()
+    
     if not prompt:
+        await message.channel.send("¿Dime? Escribe un mensaje después de `!bot` para responderte.")
         return
 
     try:
         async with message.channel.typing():
-            # Modelo exacto requerido por tu API Key
             model = genai.GenerativeModel('gemini-3.6-flash')
             response = model.generate_content(
                 f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
-                f"Responde de forma muy breve y concisa en un solo párrafo corto para el chat del juego. "
+                f"Responde de forma muy breve y concisa para el chat del juego. "
                 f"Mensaje: {prompt}"
             )
             
