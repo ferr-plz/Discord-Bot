@@ -28,21 +28,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
-# Función para obtener el modelo disponible dinámicamente
-def get_working_model():
-    try:
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        print(f"Modelos disponibles en tu cuenta: {models}")
-        for m in models:
-            if 'flash' in m or 'pro' in m:
-                return genai.GenerativeModel(m)
-        if models:
-            return genai.GenerativeModel(models[0])
-    except Exception as e:
-        print(f"Error listando modelos: {e}")
-    # Fallback predeterminado
-    return genai.GenerativeModel('models/gemini-1.5-flash')
-
 @client.event
 async def on_ready():
     print(f'Bot iniciado correctamente como {client.user}')
@@ -58,10 +43,12 @@ async def on_message(message):
 
     try:
         async with message.channel.typing():
-            model = get_working_model()
+            # Modelo exacto requerido por tu API Key
+            model = genai.GenerativeModel('gemini-3.6-flash')
             response = model.generate_content(
                 f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
-                f"Responde de forma muy breve para el chat del juego. Mensaje: {prompt}"
+                f"Responde de forma muy breve y concisa en un solo párrafo corto para el chat del juego. "
+                f"Mensaje: {prompt}"
             )
             
             if response and hasattr(response, 'text') and response.text:
