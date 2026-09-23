@@ -1,10 +1,10 @@
 import os
 import threading
+import requests
 from flask import Flask
 import discord
 import google.generativeai as genai
 
-# Servidor Flask para mantener activo Render
 app = Flask(__name__)
 
 @app.route('/')
@@ -17,10 +17,13 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# Variables de entorno
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
-CHANNEL_ID = 1150505286109495449
+CHAT_CHANNEL_ID = 1150505286109495449
+
+# === COLOCA AQUÍ LA SEED DE TU SERVIDOR ===
+WORLD_SEED = "PEGA_AQUI_LA_SEED_DE_TU_SERVER"
+MC_VERSION = "1.20.1"
 
 genai.configure(api_key=GEMINI_KEY)
 
@@ -30,7 +33,6 @@ client = discord.Client(intents=intents)
 
 PREFIX = "!bot"
 
-# Lista de modelos priorizando los de mayor cuota diaria gratuita
 MODELS_TO_TRY = [
     'gemini-1.5-flash',
     'gemini-1.5-pro',
@@ -39,18 +41,21 @@ MODELS_TO_TRY = [
 ]
 
 def generate_with_fallback(prompt_text):
+    system_prompt = (
+        f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
+        f"La SEED del mundo es: {WORLD_SEED}. "
+        f"Si el usuario pregunta por estructuras o ubicaciones, analiza su mensaje y dales una respuesta directa, "
+        f"muy breve y precisa en un solo párrafo para el chat del juego."
+    )
+    
     for model_name in MODELS_TO_TRY:
         try:
             model = genai.GenerativeModel(model_name)
-            response = model.generate_content(
-                f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
-                f"Responde de forma muy breve y concisa en un solo párrafo para el chat del juego. "
-                f"Mensaje: {prompt_text}"
-            )
+            response = model.generate_content(f"{system_prompt}\nPregunta del jugador: {prompt_text}")
             if response and hasattr(response, 'text') and response.text:
                 return response.text
         except Exception as e:
-            print(f"Error o cuota agotada en {model_name}: {e}")
+            print(f"Error en {model_name}: {e}")
             continue
     return None
 
@@ -60,11 +65,14 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    if message.channel.id != CHANNEL_ID or message.author.id == client.user.id:
+    if message.channel.id != CHAT_CHANNEL_ID or message.author.id == client.user.id:
         return
 
     content = message.content
     content_lower = content.lower()
+
+    if "server executed command" in content_lower or "server stopped!" in content_lower:
+        return
 
     if PREFIX not in content_lower:
         return
@@ -79,13 +87,12 @@ async def on_message(message):
     try:
         async with message.channel.typing():
             reply = generate_with_fallback(prompt)
-            
             if reply:
                 await message.channel.send(reply)
             else:
-                await message.channel.send("Se agotó el límite diario de esta API Key. Cambia la clave en Render para seguir consultando.")
+                await message.channel.send("No pude procesar la consulta en este momento.")
     except Exception as e:
-        print(f"Error procesando mensaje: {e}")
-        await message.channel.send("Ocurrió un problema temporal al procesar la respuesta.")
+        print(f"Error: {e}")
+        await message.channel.send("Error interno al procesar la respuesta.")
 
 client.run(DISCORD_TOKEN)
