@@ -1,8 +1,5 @@
 import os
 import threading
-import json
-import urllib.request
-import urllib.parse
 from flask import Flask
 import discord
 import google.generativeai as genai
@@ -36,6 +33,7 @@ client = discord.Client(intents=intents)
 
 PREFIX = "!bot"
 
+# Prioridad de modelos con límites más altos
 MODELS_TO_TRY = [
     'gemini-1.5-flash',
     'gemini-1.5-pro',
@@ -44,24 +42,21 @@ MODELS_TO_TRY = [
 ]
 
 def generate_with_fallback(prompt_text):
-    system_instruction = (
+    full_prompt = (
         f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
         f"La SEED del mundo es: {WORLD_SEED}. "
-        f"Si el jugador pregunta por estructuras o ubicaciones, ayúdalo a entender cómo encontrarlas "
-        f"o interpreta sus coordenadas. Responde de forma muy breve y concisa en un solo párrafo corto."
+        f"Responde de forma muy breve y concisa en un solo párrafo corto para el chat del juego. "
+        f"Mensaje del jugador: {prompt_text}"
     )
     
     for model_name in MODELS_TO_TRY:
         try:
-            model = genai.GenerativeModel(
-                model_name,
-                system_instruction=system_instruction
-            )
-            response = model.generate_content(prompt_text)
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(full_prompt)
             if response and hasattr(response, 'text') and response.text:
                 return response.text
         except Exception as e:
-            print(f"Error en {model_name}: {e}")
+            print(f"Error detallado en {model_name}: {e}")
             continue
     return None
 
@@ -71,15 +66,18 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
+    # Solo responder en el canal de chat e ignorar mensajes del propio bot
     if message.channel.id != CHAT_CHANNEL_ID or message.author.id == client.user.id:
         return
 
     content = message.content
     content_lower = content.lower()
 
+    # Ignorar logs de servidor
     if "server executed command" in content_lower or "server stopped!" in content_lower:
         return
 
+    # Verificar si incluye el prefijo !bot
     if PREFIX not in content_lower:
         return
 
@@ -93,12 +91,13 @@ async def on_message(message):
     try:
         async with message.channel.typing():
             reply = generate_with_fallback(prompt)
+            
             if reply:
                 await message.channel.send(reply)
             else:
-                await message.channel.send("No pude procesar la respuesta en este momento.")
+                await message.channel.send("Se agotó la cuota de la API Key. Genera una nueva clave en Google AI Studio para continuar.")
     except Exception as e:
-        print(f"Error: {e}")
-        await message.channel.send("Error al procesar la respuesta.")
+        print(f"Error interno: {e}")
+        await message.channel.send("Ocurrió un problema temporal al procesar la respuesta.")
 
 client.run(DISCORD_TOKEN)
