@@ -4,6 +4,7 @@ from flask import Flask
 import discord
 import google.generativeai as genai
 
+# Servidor Flask para mantener activo Render
 app = Flask(__name__)
 
 @app.route('/')
@@ -16,6 +17,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
+# Variables de entorno
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 CHANNEL_ID = 1150505286109495449
@@ -25,6 +27,21 @@ genai.configure(api_key=GEMINI_KEY)
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
+
+# Función para obtener el modelo disponible dinámicamente
+def get_working_model():
+    try:
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        print(f"Modelos disponibles en tu cuenta: {models}")
+        for m in models:
+            if 'flash' in m or 'pro' in m:
+                return genai.GenerativeModel(m)
+        if models:
+            return genai.GenerativeModel(models[0])
+    except Exception as e:
+        print(f"Error listando modelos: {e}")
+    # Fallback predeterminado
+    return genai.GenerativeModel('models/gemini-1.5-flash')
 
 @client.event
 async def on_ready():
@@ -41,19 +58,11 @@ async def on_message(message):
 
     try:
         async with message.channel.typing():
-            # Probamos con el alias estable directo
-            try:
-                model = genai.GenerativeModel('gemini-1.5-flash-latest')
-                response = model.generate_content(
-                    f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
-                    f"Responde de forma muy breve para el chat del juego. Mensaje: {prompt}"
-                )
-            except Exception:
-                # Fallback secundario si el alias anterior falla
-                model = genai.GenerativeModel('gemini-pro')
-                response = model.generate_content(
-                    f"Eres un asistente en Minecraft. Responde corto: {prompt}"
-                )
+            model = get_working_model()
+            response = model.generate_content(
+                f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
+                f"Responde de forma muy breve para el chat del juego. Mensaje: {prompt}"
+            )
             
             if response and hasattr(response, 'text') and response.text:
                 await message.channel.send(response.text)
