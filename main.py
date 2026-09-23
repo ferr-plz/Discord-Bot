@@ -28,6 +28,35 @@ client = discord.Client(intents=intents)
 
 PREFIX = "!bot"
 
+# Lista de modelos a probar en orden por si uno agota la cuota
+MODELS_TO_TRY = [
+    'gemini-3.6-flash',
+    'gemini-2.5-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro'
+]
+
+def generate_with_fallback(prompt_text):
+    for model_name in MODELS_TO_TRY:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(
+                f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
+                f"Responde de forma muy breve y concisa en un solo párrafo para el chat del juego. "
+                f"Mensaje: {prompt_text}"
+            )
+            if response and hasattr(response, 'text') and response.text:
+                return response.text
+        except Exception as e:
+            # Si el error es de cuota (429), continúa probando el siguiente modelo
+            if "429" in str(e) or "quota" in str(e).lower():
+                print(f"Cuota agotada en {model_name}, intentando siguiente modelo...")
+                continue
+            else:
+                print(f"Error inesperado en {model_name}: {e}")
+                continue
+    return None
+
 @client.event
 async def on_ready():
     print(f'Bot iniciado correctamente como {client.user}')
@@ -40,11 +69,9 @@ async def on_message(message):
     content = message.content
     content_lower = content.lower()
 
-    # Verifica si '!bot' está en cualquier parte del mensaje
     if PREFIX not in content_lower:
-        return  # Si es charla normal de Minecraft, lo ignora
+        return
 
-    # Extrae el texto justo después de '!bot'
     split_index = content_lower.find(PREFIX) + len(PREFIX)
     prompt = content[split_index:].strip()
 
@@ -54,19 +81,14 @@ async def on_message(message):
 
     try:
         async with message.channel.typing():
-            model = genai.GenerativeModel('gemini-3.6-flash')
-            response = model.generate_content(
-                f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
-                f"Responde de forma muy breve y concisa en un solo párrafo para el chat del juego. "
-                f"Mensaje: {prompt}"
-            )
+            reply = generate_with_fallback(prompt)
             
-            if response and hasattr(response, 'text') and response.text:
-                await message.channel.send(response.text)
+            if reply:
+                await message.channel.send(reply)
             else:
-                await message.channel.send("No se pudo generar respuesta.")
+                await message.channel.send("Llegué al límite diario de consultas de la API gratuita. Intenta de nuevo más tarde.")
     except Exception as e:
-        print(f"Error con Gemini: {e}")
-        await message.channel.send(f"Error con la API: {e}")
+        print(f"Error procesando mensaje: {e}")
+        await message.channel.send("Ocurrió un problema temporal al procesar la respuesta.")
 
 client.run(DISCORD_TOKEN)
