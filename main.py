@@ -1,10 +1,13 @@
 import os
 import threading
-import requests
+import json
+import urllib.request
+import urllib.parse
 from flask import Flask
 import discord
 import google.generativeai as genai
 
+# Servidor Flask para mantener activo Render
 app = Flask(__name__)
 
 @app.route('/')
@@ -17,13 +20,13 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
+# Variables de entorno
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 CHAT_CHANNEL_ID = 1150505286109495449
 
 # === COLOCA AQUÍ LA SEED DE TU SERVIDOR ===
-WORLD_SEED = "2193550371840698949"
-MC_VERSION = "1.20.1"
+WORLD_SEED = "PEGA_AQUI_LA_SEED_DE_TU_SERVER"
 
 genai.configure(api_key=GEMINI_KEY)
 
@@ -41,17 +44,20 @@ MODELS_TO_TRY = [
 ]
 
 def generate_with_fallback(prompt_text):
-    system_prompt = (
+    system_instruction = (
         f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
         f"La SEED del mundo es: {WORLD_SEED}. "
-        f"Si el usuario pregunta por estructuras o ubicaciones, analiza su mensaje y dales una respuesta directa, "
-        f"muy breve y precisa en un solo párrafo para el chat del juego."
+        f"Si el jugador pregunta por estructuras o ubicaciones, ayúdalo a entender cómo encontrarlas "
+        f"o interpreta sus coordenadas. Responde de forma muy breve y concisa en un solo párrafo corto."
     )
     
     for model_name in MODELS_TO_TRY:
         try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(f"{system_prompt}\nPregunta del jugador: {prompt_text}")
+            model = genai.GenerativeModel(
+                model_name,
+                system_instruction=system_instruction
+            )
+            response = model.generate_content(prompt_text)
             if response and hasattr(response, 'text') and response.text:
                 return response.text
         except Exception as e:
@@ -90,9 +96,9 @@ async def on_message(message):
             if reply:
                 await message.channel.send(reply)
             else:
-                await message.channel.send("No pude procesar la consulta en este momento.")
+                await message.channel.send("No pude procesar la respuesta en este momento.")
     except Exception as e:
         print(f"Error: {e}")
-        await message.channel.send("Error interno al procesar la respuesta.")
+        await message.channel.send("Error al procesar la respuesta.")
 
 client.run(DISCORD_TOKEN)
