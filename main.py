@@ -1,22 +1,22 @@
 import os
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from flask import Flask
 import discord
 import google.generativeai as genai
 
-# Servidor HTTP para mantener activo Render
-class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot activo")
+# Servidor Flask para cumplir con el Web Service de Render
+app = Flask(__name__)
 
-def run_web_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), SimpleHTTPRequestHandler)
-    server.serve_forever()
+@app.route('/')
+def home():
+    return "Bot de Minecraft activo", 200
 
-threading.Thread(target=run_web_server, daemon=True).start()
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# Iniciar servidor en hilo secundario
+threading.Thread(target=run_flask, daemon=True).start()
 
 # Variables de entorno
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -44,20 +44,16 @@ async def on_message(message):
 
     try:
         async with message.channel.typing():
-            # Modelo compatible y robusto
             model = genai.GenerativeModel('gemini-1.5-flash')
             response = model.generate_content(
-                f"Eres un asistente dentro de un servidor de Minecraft. "
-                f"Responde muy brevemente en una sola frase corta. "
-                f"Mensaje del jugador: {prompt}"
+                f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
+                f"Responde de forma breve en una sola frase corta. "
+                f"Mensaje: {prompt}"
             )
-            
             if response and response.text:
                 await message.channel.send(response.text)
-            else:
-                await message.channel.send("No pude procesar esa respuesta.")
     except Exception as e:
-        print(f"Error con Gemini API: {e}")
-        await message.channel.send("Ocurrió un error al consultar la IA.")
+        print(f"Error con Gemini: {e}")
+        await message.channel.send("Error al procesar la respuesta.")
 
 client.run(DISCORD_TOKEN)
