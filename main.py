@@ -1,99 +1,89 @@
 import os
-import threading
-from flask import Flask
 import discord
 import google.generativeai as genai
+from flask import Flask
+from threading import Thread
 
-# Servidor Flask para mantener activo Render
-app = Flask(__name__)
+# 1. Configuración de Servidor Web para mantener vivo en Render
+app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot activo", 200
+    return "Bot activo 24/7"
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+def run():
+    app.run(host='0.0.0.0', port=8080)
 
-threading.Thread(target=run_flask, daemon=True).start()
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
-# Variables de entorno
+# 2. Configuración de Gemini y Discord
+GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-GEMINI_KEY = os.getenv("GEMINI_KEY")
-CHAT_CHANNEL_ID = 1150505286109495449
 
-# === REEMPLAZA ESTE NÚMERO POR LA SEMILLA REAL DE TU SERVIDOR ===
-WORLD_SEED = 2193550371840698949
-
-genai.configure(api_key=GEMINI_KEY)
+genai.configure(api_key=GENAI_API_KEY)
+# Usamos el modelo más rápido y actualizado
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
-PREFIX = "!bot"
+# 3. Manejo de Instrucciones Personalizadas (System Prompt)
+RULES_FILE = "custom_rules.txt"
 
-MODELS_TO_TRY = [
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
-    'gemini-2.5-flash',
-    'gemini-3.6-flash'
-]
+def load_custom_rules():
+    if os.path.exists(RULES_FILE):
+        with open(RULES_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    return "No menciones la semilla a menos que te la pregunten explícitamente."
 
-def generate_with_fallback(prompt_text):
-    full_prompt = (
-        f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
-        f"La SEED numérica del mundo es exactamente: {WORLD_SEED}. "
-        f"Responde de forma muy breve y directa en un solo párrafo corto para el chat del juego. "
-        f"Mensaje del jugador: {prompt_text}"
-    )
-    
-    for model_name in MODELS_TO_TRY:
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(full_prompt)
-            if response and hasattr(response, 'text') and response.text:
-                return response.text
-        except Exception as e:
-            print(f"Error en {model_name}: {e}")
-            continue
-    return None
+def save_custom_rules(new_rules):
+    with open(RULES_FILE, "w", encoding="utf-8") as f:
+        f.write(new_rules)
 
+# 4. Eventos de Discord
 @client.event
 async def on_ready():
-    print(f'Bot iniciado correctamente como {client.user}')
+    print(f'Bot conectado como {client.user}')
 
 @client.event
 async def on_message(message):
-    if message.channel.id != CHAT_CHANNEL_ID or message.author.id == client.user.id:
+    if message.author == client.user:
         return
 
-    content = message.content
-    content_lower = content.lower()
-
-    if "server executed command" in content_lower or "server stopped!" in content_lower:
+    # Comando para cambiar las instrucciones desde Discord
+    if message.content.startswith("!bot config "):
+        new_instructions = message.content[12:].strip()
+        save_custom_rules(new_instructions)
+        await message.channel.send(f"✅ **Instrucciones actualizadas:**\n> {new_instructions}")
         return
 
-    if PREFIX not in content_lower:
-        return
+    # Comando principal para hablar con la IA
+    if message.content.startswith("!bot "):
+        user_prompt = message.content[5:].strip()
+        
+        # Cargar las instrucciones actuales
+        custom_rules = load_custom_rules()
+        
+        # Unir las instrucciones del sistema con el mensaje del usuario
+        full_prompt = f"""
+        [INSTRUCCIONES DEL SISTEMA]
+        Eres un asistente útil para un servidor de Minecraft Fabric 1.20.1.
+        Sigue estrictamente estas reglas de comportamiento: {custom_rules}
+        
+        [MENSAJE DEL USUARIO]
+        {user_prompt}
+        """
 
-    split_index = content_lower.find(PREFIX) + len(PREFIX)
-    prompt = content[split_index:].strip()
+        try:
+            response = model.generate_content(full_prompt)
+            await message.channel.send(response.text)
+        except Exception as e:
+            print(f"Error con la API de Gemini: {e}")
+            await message.channel.send("Ocurrió un error al procesar tu solicitud.")
 
-    if not prompt:
-        await message.channel.send("¿Dime? Escribe tu consulta después de `!bot`.")
-        return
-
-    try:
-        async with message.channel.typing():
-            reply = generate_with_fallback(prompt)
-            
-            if reply:
-                await message.channel.send(reply)
-            else:
-                await message.channel.send("Se agotó la cuota de la API Key. Genera una nueva clave en Google AI Studio para continuar.")
-    except Exception as e:
-        print(f"Error interno: {e}")
-        await message.channel.send("Ocurrió un problema temporal al procesar la respuesta.")
-
+# Iniciar servidor web y bot
+keep_alive()
 client.run(DISCORD_TOKEN)
