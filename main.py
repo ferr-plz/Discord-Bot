@@ -4,7 +4,7 @@ import google.generativeai as genai
 from flask import Flask
 from threading import Thread
 
-# 1. Servidor web para mantener activo en Render
+# 1. Servidor web para mantener activo el proceso en Render
 app = Flask('')
 
 @app.route('/')
@@ -18,12 +18,12 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# 2. Configuración de API Keys y Cliente
+# 2. Configuración de API Keys y Cliente de Discord/Gemini
 GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 genai.configure(api_key=GENAI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -42,7 +42,7 @@ def save_custom_rules(new_rules):
     with open(RULES_FILE, "w", encoding="utf-8") as f:
         f.write(new_rules)
 
-# 4. Eventos del Bot
+# 4. Eventos e Interacciones de Discord
 @client.event
 async def on_ready():
     print(f'Bot conectado exitosamente como {client.user}')
@@ -52,6 +52,13 @@ async def on_message(message):
     if message.author == client.user:
         return
 
+    # Comando para reiniciar/borrar las reglas guardadas
+    if message.content.strip() == "!bot reset":
+        if os.path.exists(RULES_FILE):
+            os.remove(RULES_FILE)
+        await message.channel.send("🔄 **Instrucciones borradas.** Se han restaurado las reglas por defecto.")
+        return
+
     # Comando para cambiar las reglas dinámicamente desde Discord
     if message.content.startswith("!bot config "):
         new_instructions = message.content[12:].strip()
@@ -59,11 +66,11 @@ async def on_message(message):
         await message.channel.send(f"✅ **Instrucciones actualizadas:**\n> {new_instructions}")
         return
 
-    # Comando principal del bot
+    # Comando principal para hablar con la IA
     if message.content.startswith("!bot "):
         user_prompt = message.content[5:].strip()
         
-        # Cargar las instrucciones configuradas desde Discord
+        # Cargar las instrucciones configuradas
         custom_rules = load_custom_rules()
         
         # Contexto completo con la Seed del servidor
