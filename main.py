@@ -1,106 +1,99 @@
 import os
+import threading
+from flask import Flask
 import discord
 import google.generativeai as genai
-from flask import Flask
-from threading import Thread
 
-# 1. Servidor web para mantener activo el proceso en Render
-app = Flask('')
+# Servidor Flask para mantener activo Render
+app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot activo 24/7"
+    return "Bot activo", 200
 
-def run():
-    app.run(host='0.0.0.0', port=8080)
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
+threading.Thread(target=run_flask, daemon=True).start()
 
-# 2. Configuración de API Keys y Cliente de Discord/Gemini
-GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Variables de entorno
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+GEMINI_KEY = os.getenv("GEMINI_KEY")
+CHAT_CHANNEL_ID = 1150505286109495449
 
-genai.configure(api_key=GENAI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# === REEMPLAZA ESTE NÚMERO POR LA SEMILLA REAL DE TU SERVIDOR ===
+WORLD_SEED = 2193550371840698949
+
+genai.configure(api_key=GEMINI_KEY)
 
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
-# 3. Manejo del archivo de reglas persistentes
-RULES_FILE = "custom_rules.txt"
+PREFIX = "!bot"
 
-def load_custom_rules():
-    if os.path.exists(RULES_FILE):
-        with open(RULES_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    return "No menciones ni incluyas la semilla en tus saludos o respuestas a menos que el usuario te la pida explícitamente."
+MODELS_TO_TRY = [
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+    'gemini-2.5-flash',
+    'gemini-3.6-flash'
+]
 
-def save_custom_rules(new_rules):
-    with open(RULES_FILE, "w", encoding="utf-8") as f:
-        f.write(new_rules)
+def generate_with_fallback(prompt_text):
+    full_prompt = (
+        f"Eres un asistente dentro de un servidor de Minecraft Fabric 1.20.1. "
+        f"La SEED numérica del mundo es exactamente: {WORLD_SEED}. "
+        f"Responde de forma muy breve y directa en un solo párrafo corto para el chat del juego. "
+        f"Mensaje del jugador: {prompt_text}"
+    )
+    
+    for model_name in MODELS_TO_TRY:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(full_prompt)
+            if response and hasattr(response, 'text') and response.text:
+                return response.text
+        except Exception as e:
+            print(f"Error en {model_name}: {e}")
+            continue
+    return None
 
-# 4. Eventos e Interacciones de Discord
 @client.event
 async def on_ready():
-    print(f'Bot conectado exitosamente como {client.user}')
+    print(f'Bot iniciado correctamente como {client.user}')
 
 @client.event
 async def on_message(message):
-    if message.author == client.user:
+    if message.channel.id != CHAT_CHANNEL_ID or message.author.id == client.user.id:
         return
 
-    # Comando para reiniciar/borrar las reglas guardadas
-    if message.content.strip() == "!bot reset":
-        if os.path.exists(RULES_FILE):
-            os.remove(RULES_FILE)
-        await message.channel.send("🔄 **Instrucciones borradas.** Se han restaurado las reglas por defecto.")
+    content = message.content
+    content_lower = content.lower()
+
+    if "server executed command" in content_lower or "server stopped!" in content_lower:
         return
 
-    # Comando para cambiar las reglas dinámicamente desde Discord
-    if message.content.startswith("!bot config "):
-        new_instructions = message.content[12:].strip()
-        save_custom_rules(new_instructions)
-        await message.channel.send(f"✅ **Instrucciones actualizadas:**\n> {new_instructions}")
+    if PREFIX not in content_lower:
         return
 
-    # Comando principal para hablar con la IA
-    if message.content.startswith("!bot "):
-        user_prompt = message.content[5:].strip()
-        
-        # Evitar enviar consultas vacías
-        if not user_prompt:
-            await message.channel.send("Dime qué necesitas. Ejemplo: `!bot hola`")
-            return
-        
-        # Cargar las instrucciones configuradas
-        custom_rules = load_custom_rules()
-        
-        # Contexto completo con la Seed del servidor
-        full_prompt = f"""
-        [CONTEXTO DEL SERVIDOR]
-        Juego: Minecraft Fabric 1.20.1
-        Semilla (Seed): 2193550371840698949
+    split_index = content_lower.find(PREFIX) + len(PREFIX)
+    prompt = content[split_index:].strip()
 
-        [INSTRUCCIONES Y REGLAS DE COMPORTAMIENTO]
-        - Eres el asistente oficial del servidor de Minecraft.
-        - Reglas adicionales del administrador: {custom_rules}
+    if not prompt:
+        await message.channel.send("¿Dime? Escribe tu consulta después de `!bot`.")
+        return
 
-        [PREGUNTA DEL USUARIO]
-        {user_prompt}
-        """
-
-        try:
-            response = model.generate_content(full_prompt)
-            if response.text:
-                await message.channel.send(response.text)
+    try:
+        async with message.channel.typing():
+            reply = generate_with_fallback(prompt)
+            
+            if reply:
+                await message.channel.send(reply)
             else:
-                await message.channel.send("No pude generar una respuesta para esa consulta.")
-        except Exception as e:
-            print(f"Error en Gemini API: {e}")
-            await message.channel.send("Ocurrió un error al procesar la respuesta.")
+                await message.channel.send("Se agotó la cuota de la API Key. Genera una nueva clave en Google AI Studio para continuar.")
+    except Exception as e:
+        print(f"Error interno: {e}")
+        await message.channel.send("Ocurrió un problema temporal al procesar la respuesta.")
 
-keep_alive()
 client.run(DISCORD_TOKEN)
