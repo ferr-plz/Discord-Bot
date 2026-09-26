@@ -23,7 +23,7 @@ GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 genai.configure(api_key=GENAI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash')
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -70,6 +70,11 @@ async def on_message(message):
     if message.content.startswith("!bot "):
         user_prompt = message.content[5:].strip()
         
+        # Evitar enviar consultas vacías
+        if not user_prompt:
+            await message.channel.send("Dime qué necesitas. Ejemplo: `!bot hola`")
+            return
+        
         # Cargar las instrucciones configuradas
         custom_rules = load_custom_rules()
         
@@ -89,7 +94,10 @@ async def on_message(message):
 
         try:
             response = model.generate_content(full_prompt)
-            await message.channel.send(response.text)
+            if response.text:
+                await message.channel.send(response.text)
+            else:
+                await message.channel.send("No pude generar una respuesta para esa consulta.")
         except Exception as e:
             print(f"Error en Gemini API: {e}")
             await message.channel.send("Ocurrió un error al procesar la respuesta.")
